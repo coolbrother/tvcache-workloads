@@ -12,9 +12,12 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8"]
+# tvverify, the correctness framework (correctness/); see bash/verify.py.
+verify = ["tvverify"]
 
 [tool.uv.sources]
 tvclient = { path = "../tvclient", editable = true }
+tvverify = { path = "correctness", editable = true }
 
 [build-system]
 requires = ["hatchling"]

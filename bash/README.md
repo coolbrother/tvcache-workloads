@@ -72,4 +72,20 @@ async with TvcacheToolExecutor(Sandbox, BashToolCall, "hello-world") as ex:
 - Very long output (over about 2000 lines) can't be captured. It's returned as `Failed to execute`, and that result is never cached.
 - Every command is assumed to change state unless created with `mutates=False`.
 - Snapshots keep files, the current directory, and exported variables. They don't keep running programs or unexported variables. See [snapshot design](docs/snapshot-design.md).
-- Environment comparison isn't implemented here; `TerminalBenchSandbox` has no `equals`.
+- `TerminalBenchSandbox` itself has no `equals`. For correctness checks, `VerifiableSandbox`
+  in `verify.py` adds a state digest (files under `/app`, exported variables, cwd).
+
+## Correctness checks (tvverify)
+
+`verify.py` plugs this workload into tvverify (`correctness/`). With the manager running:
+
+```bash
+uv sync --group verify
+uv run python -m tvverify check --adapter tvcache_workloads.bash.verify:HelloWorldAdapter --suite contract
+uv run python -m tvverify check --adapter tvcache_workloads.bash.verify:HelloWorldAdapter --rollouts 5
+```
+
+`contract` checks the sandbox alone. The full run sends the trace's rollouts through a fresh
+cache server and replays every cached node from a fresh container. It starts many containers,
+so expect it to take minutes. `OLDPWD` is reported but not compared: restoring a snapshot
+replays `cd`, which overwrites it.

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
@@ -231,6 +231,9 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+verify = [
+    { name = "tvverify" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -240,11 +243,28 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
+verify = [{ name = "tvverify", editable = "correctness" }]
 
 [[package]]
 name = "tvclient"
 version = "0.1.0"
 source = { editable = "../tvclient" }
+
+[[package]]
+name = "tvverify"
+version = "0.1.0"
+source = { editable = "correctness" }
+dependencies = [
+    { name = "tvclient" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib", marker = "extra == 'plots'" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "tvclient" },
+]
+provides-extras = ["dev", "plots"]
 
 [[package]]
 name = "typing-extensions"
