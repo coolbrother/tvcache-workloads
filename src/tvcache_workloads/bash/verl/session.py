@@ -45,6 +45,9 @@ class CacheSettings:
     snapshot_mode: str = "cold"
     trace_dir: str = ""  # TraceRecorder JSONL per worker process; needs tvclient's observer hooks
     max_output_chars: int = 4000
+    # Seconds of un-snapshotted runtime before a snapshot. None keeps tvclient's
+    # adaptive policy (a multiple of the measured fork cost).
+    snapshot_threshold: Optional[float] = None
 
     @staticmethod
     def from_config(config: dict) -> "CacheSettings":
@@ -63,6 +66,7 @@ class CacheSettings:
             "snapshot_mode": get("snapshot_mode", "TVCACHE_SNAPSHOT_MODE"),
             "trace_dir": get("trace_dir", "TVCACHE_TRACE_DIR"),
             "max_output_chars": get("max_output_chars", "TVCACHE_MAX_OUTPUT_CHARS", int),
+            "snapshot_threshold": get("snapshot_threshold", "TVCACHE_SNAPSHOT_THRESHOLD", float),
         }
         return CacheSettings(**{k: v for k, v in values.items() if v is not None})
 
@@ -130,6 +134,8 @@ def make_session(task: str, settings: CacheSettings) -> RolloutSession:
         )
     )
     extra = {"observer": _trace_recorder(settings.trace_dir)} if settings.trace_dir else {}
+    if settings.snapshot_threshold is not None:
+        extra.update(adaptive=False, fixed_threshold_seconds=settings.snapshot_threshold)
     executor = TvcacheToolExecutor(
         sandbox, BashToolCall, settings.cache_task_id(task),
         host=settings.cache_host, port=settings.cache_port, **extra,

@@ -7,7 +7,10 @@
 #   TVCACHE_VARIANT=main ...          # against TVCache main instead of the fix branches
 #
 # Run it inside an allocation, e.g.
-#   salloc -q shared_interactive -C gpu -G 1 -c 32 -t 04:00:00 -A <project>
+#   sbatch -q shared -C gpu -G 2 -c 64 -t 08:00:00 -A <project> --wrap "MODE=train bash train_pilot.sh"
+# Half a node for its RAM (about 120 GB): podman's image store on GPU nodes is
+# /tmp, a RAM disk, and a quarter node ran out of memory (ISSUES.md #16).
+# veRL still uses one GPU (N_GPUS).
 # Everything (cache server, manager, containers, veRL) stays on this node, so
 # snapshots never have to move between nodes. Results land in $RUN.
 set -euo pipefail
@@ -25,9 +28,13 @@ WORKLOADS="$TVROOT/tvcache-workloads"
 VERL_PKG="$WORKLOADS/src/tvcache_workloads/bash/verl"
 mkdir -p "$RUN/logs"
 export TVCACHE_NAMESPACE="$(basename "$RUN")"   # a fresh trie per run
+# Fixed snapshot threshold (seconds of un-snapshotted runtime), so misses go
+# through the restore path often. Empty = tvclient's adaptive policy, which
+# took 4 snapshots in 686 commands in the sampling test.
+export TVCACHE_SNAPSHOT_THRESHOLD="${SNAPSHOT_THRESHOLD-1.0}"
 # The trace needs tvclient's observer hooks, which only the fix branches have.
 if [[ "$TVCACHE_VARIANT" == fixes ]]; then export TVCACHE_TRACE_DIR="$RUN/trace"; else export TVCACHE_TRACE_DIR=""; fi
-echo "run: $RUN (variant $TVCACHE_VARIANT, mode $MODE)" | tee "$RUN/logs/run.txt"
+echo "run: $RUN (variant $TVCACHE_VARIANT, mode $MODE, snapshot threshold ${TVCACHE_SNAPSHOT_THRESHOLD:-adaptive})" | tee "$RUN/logs/run.txt"
 
 PIDS=()
 cleanup() {
@@ -35,6 +42,18 @@ cleanup() {
   wait 2>/dev/null || true
 }
 trap cleanup EXIT
+
+# 0. memory log, once a minute: this job's cgroup memory (includes the /tmp
+#    RAM disk) and the size of podman's image store
+GRAPHROOT="$($CONTAINER_CLI info --format '{{.Store.GraphRoot}}' 2>/dev/null || echo /tmp)"
+CGROUP_MEM="/sys/fs/cgroup$(awk -F: '$1=="0"{print $3}' /proc/self/cgroup)/memory.current"
+(set +eu; echo "time,cgroup_mem_gb,graphroot_gb,containers,images"
+ while true; do
+   mem=$(awk '{printf "%.1f", $1/2^30}' "$CGROUP_MEM" 2>/dev/null || echo NA)
+   root=$(du -s --block-size=1G "$GRAPHROOT" 2>/dev/null | cut -f1)
+   echo "$(date +%FT%T),$mem,${root:-NA},$($CONTAINER_CLI ps -q 2>/dev/null | wc -l),$($CONTAINER_CLI images -q 2>/dev/null | wc -l)"
+   sleep 60
+ done) > "$RUN/logs/memory.csv" 2>/dev/null & PIDS+=($!)
 
 # 1. podman's Docker API socket, the cache server (default eviction:
 #    ttl_and_watermark, as in real training), the container manager

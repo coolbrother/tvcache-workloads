@@ -25,23 +25,30 @@ Perlmutter has no Docker daemon, so the container manager drives
 Step 2 is the gate: if the **docker API socket** or **SDK** items fail, stop.
 The manager's Docker SDK calls and `docker-compose` both need that socket.
 
-GPU allocation for steps 6–7. The pilot uses one GPU (`N_GPUS=1`), so ask
-for a shared quarter node instead of a whole node; it is charged at a
-quarter of the node rate:
-`salloc -q shared_interactive -C gpu -G 1 -c 32 -t 04:00:00 -A <project>`.
-Use `-G 2 -c 64` if the containers run out of host RAM.
+GPU jobs for steps 6–7 go in with `sbatch` on the `shared` QoS (it keeps
+running if SSH drops), from this directory:
+
+    sbatch -q shared -C gpu -G 2 -c 64 -t 08:00:00 -A <project> \
+      -o $SCRATCH/tvcache/runs/slurm/%x-%j.out --wrap "MODE=train bash train_pilot.sh"
+
+Half a node (`-G 2 -c 64`) for its RAM, about 120 GB; veRL uses one GPU
+(`N_GPUS=1`). On GPU nodes podman's image store is `/tmp`, a RAM disk, and a
+quarter node (`-G 1 -c 32`, about 60 GB) ran out of memory (ISSUES.md #16).
+`$RUN/logs/memory.csv` logs the job's memory once a minute.
+
+Snapshots: `train_pilot.sh` sets a fixed 1 s threshold
+(`SNAPSHOT_THRESHOLD`; empty for tvclient's adaptive policy), so misses
+often go through the restore path.
 
 ## Budget
 
-The project has about 10 node-hours. Rough cost per step: probe and
-prebuild on the login node, about 0; CPU confirm, about 0.1; sampling test,
-about 0.1; one pilot variant (5 epochs, 4 rollouts: about 5 h on a quarter
-node, a guess until the sampling test gives a real step time), about 1.25.
-Both variants fit with room for reruns. 5 h is over the 4-hour interactive
-limit, so training goes in as an `sbatch` job on the `shared` QoS.
-Checkpoints are saved every 10 steps; rerun with the same `RUN=` to resume
-(the cache restarts empty, so later steps begin cold). Check usage with `sshare -A <project>`
-or Iris.
+The project has about 10 node-hours. Probe, prebuild and smoke test run on
+the login node (free). Sampling test: rollouts took about 43 min. One pilot
+variant: about 4.5–5 h on half a node, about 2.5 node-hours (more if the
+snapshot threshold slows rollouts), so about 5 for both. Checkpoints are
+saved every 10 steps; rerun with the same `RUN=` to resume (the cache
+restarts empty, so later steps begin cold). Check usage with
+`sshare -A <project>` or Iris.
 
 ## veRL environment
 

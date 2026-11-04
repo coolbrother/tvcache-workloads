@@ -132,6 +132,18 @@ def test_settings_fall_back_to_environment(monkeypatch):
     assert settings.cache_task_id("fix-git") == "fix-git::pilot1"
 
 
+def test_snapshot_threshold_switches_the_executor_to_a_fixed_policy(monkeypatch):
+    from tvcache_workloads.bash.verl import session as session_module
+
+    made = []
+    monkeypatch.setattr(session_module, "TvcacheToolExecutor", lambda *a, **kw: made.append(kw) or FakeExecutor())
+    session_module.make_session("t", CacheSettings())
+    monkeypatch.setenv("TVCACHE_SNAPSHOT_THRESHOLD", "1.0")
+    session_module.make_session("t", CacheSettings.from_config({}))
+    assert "adaptive" not in made[0]  # default: tvclient's adaptive policy
+    assert (made[1]["adaptive"], made[1]["fixed_threshold_seconds"]) == (False, 1.0)
+
+
 def test_session_runs_calls_in_order_and_survives_a_failed_call():
     session = RolloutSession("t", FakeExecutor())
 
