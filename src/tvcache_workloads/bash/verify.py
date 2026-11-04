@@ -22,17 +22,18 @@ cannot see processes or unexported variables.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import ClassVar, List, Optional, Sequence, Tuple
 
 from tvclient import TestToolCall, ToolCall
-
-from tvcache_workloads.bash.sandbox import TerminalBenchSandbox, tb_task_name
-from tvcache_workloads.bash.tool_call import BashToolCall
 from tvverify.adapters.base import TaskSpec, WorkloadAdapter
 from tvverify.compare.base import Comparator, ExactComparator
 from tvverify.compare.normalizers import NormalizedComparator
 from tvverify.digest.schema import DigestComponent, StateDigest, sha256_json
+
+from tvcache_workloads.bash.sandbox import TerminalBenchSandbox, tb_task_name
+from tvcache_workloads.bash.tool_call import BashToolCall
 
 TRACES_DIR = Path(__file__).resolve().parents[3] / "bash" / "traces"
 # Bookkeeping that differs between terminals without being task state
@@ -123,30 +124,20 @@ class VerifiableSandbox(TerminalBenchSandbox):
         ).to_dict()
 
 
-class TraceAdapter(WorkloadAdapter):
-    """A Bash workload whose rollouts come from a trace file
-    (bash/traces/<task>.json)."""
+class BashAdapter(WorkloadAdapter):
+    """What every Bash workload shares: calls rebuilt from cache keys, and
+    output comparison. A key holds only the command, so a rebuilt call always
+    counts as state-changing (BashToolCall's default)."""
 
     name = "bash"
     sandbox_class = VerifiableSandbox
     tool_call_class = BashToolCall
-    trace_file: ClassVar[str] = ""
-
-    def _trace(self) -> dict:
-        return json.loads((TRACES_DIR / self.trace_file).read_text())
 
     def tool_call_from_key(self, key: str) -> ToolCall:
         if self.is_test_key(key):
             return TestToolCall("")
         data = json.loads(key)
         return BashToolCall(data["command"])
-
-    def tasks(self) -> Sequence[TaskSpec]:
-        task = self._trace()["task"]
-        return [TaskSpec(task, root_image_id=task)]
-
-    def scripted_paths(self, task_id: str) -> List[List[ToolCall]]:
-        return [[BashToolCall(c) for c in r["commands"]] for r in self._trace()["rollouts"]]
 
     def tool_class(self, key: str) -> str:
         return "test" if self.is_test_key(key) else "bash"
@@ -157,5 +148,38 @@ class TraceAdapter(WorkloadAdapter):
         return ExactComparator() if self.is_test_key(key) else NormalizedComparator()
 
 
+class TraceAdapter(BashAdapter):
+    """A Bash workload whose rollouts come from a trace file
+    (bash/traces/<task>.json)."""
+
+    trace_file: ClassVar[str] = ""
+
+    def _trace(self) -> dict:
+        return json.loads((TRACES_DIR / self.trace_file).read_text())
+
+    def tasks(self) -> Sequence[TaskSpec]:
+        task = self._trace()["task"]
+        return [TaskSpec(task, root_image_id=task)]
+
+    def scripted_paths(self, task_id: str) -> List[List[ToolCall]]:
+        return [[BashToolCall(c) for c in r["commands"]] for r in self._trace()["rollouts"]]
+
+
 class HelloWorldAdapter(TraceAdapter):
     trace_file = "hello-world.json"
+
+
+class TerminalBenchAdapter(BashAdapter):
+    """Any Terminal-Bench task, for checking a cache trie someone else built
+    (a training run's DUMP_ALL):
+
+        tvverify check-graph --adapter tvcache_workloads.bash.verify:TerminalBenchAdapter --dump epoch_1.json
+
+    check-graph takes the task ids from the dump; every call is rebuilt from
+    its cache key, so no trace is needed. For `check`, which drives its own
+    rollouts, use a TraceAdapter instead. TVVERIFY_TASKS (comma-separated)
+    lists tasks for code that asks the adapter."""
+
+    def tasks(self) -> Sequence[TaskSpec]:
+        ids = [t.strip() for t in os.environ.get("TVVERIFY_TASKS", "").split(",") if t.strip()]
+        return [TaskSpec(t, root_image_id=tb_task_name(t)) for t in ids]

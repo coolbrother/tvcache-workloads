@@ -51,11 +51,33 @@ def main(argv: List[str]) -> int:
     check.add_argument("--rollouts", type=int, default=6)
     check.add_argument("--seed", type=int, default=0)
     check.add_argument("--replays", type=int, default=2, help="fresh replays used to tell noise from bugs (1 disables)")
+    check.add_argument("--max-replay-nodes", type=int, default=None, help="replay at most this many nodes per task (default: all)")
+    check.add_argument("--json", default=None, help="also write the results to this JSON file")
+    graph = sub.add_parser("check-graph", help="replay-check a cache trie saved with DUMP_ALL")
+    graph.add_argument("--adapter", required=True, help="package.module:ClassName of your WorkloadAdapter")
+    graph.add_argument("--dump", required=True, help="DUMP_ALL saved as JSON (task id -> trie)")
+    graph.add_argument("--task", action="append", help="check only this task (repeatable; default: every task in the dump)")
+    graph.add_argument("--max-replay-nodes", type=int, default=20, help="nodes replayed per task: the most-served half plus a random sample")
+    graph.add_argument("--no-snapshots", action="store_true", help="the dump's snapshots no longer exist: skip the snapshot checks (C2a)")
+    graph.add_argument("--seed", type=int, default=0)
+    graph.add_argument("--replays", type=int, default=2, help="fresh replays used to tell noise from bugs (1 disables)")
+    graph.add_argument("--json", default=None, help="also write the results to this JSON file")
+    report = sub.add_parser("report", help="combine --json results into a markdown report")
+    report.add_argument("results", nargs="+")
     args = parser.parse_args(argv)
     if args.command == "check":
         from tvverify.check import main as check_main
 
         return check_main(args)
+    if args.command == "check-graph":
+        from tvverify.check import main_graph
+
+        return main_graph(args)
+    if args.command == "report":
+        from tvverify.report import render
+
+        print(render(args.results), end="")
+        return 0
     if args.command == "selftest":
         return run_exact_suite(args.seeds)
     return 2

@@ -67,3 +67,16 @@ def test_rollouts_come_from_the_trace_in_order():
     assert task == "hello-world"
     rollouts = adapter.sample_rollouts(task, None, 5)
     assert [c.command for c in rollouts[0]] == [c.command for c in rollouts[1]]  # solve, solve-again
+
+
+def test_terminal_bench_adapter_rebuilds_calls_from_keys_and_names_tasks(monkeypatch):
+    from tvcache_workloads.bash.verify import TerminalBenchAdapter
+
+    adapter = TerminalBenchAdapter()
+    key = BashToolCall("cd /app && ls").serialize()
+    call = adapter.tool_call_from_key(key)
+    assert call.serialize() == key and call.will_mutate_state()
+    assert adapter.is_test_key(adapter.tool_call_from_key(TestToolCall("").serialize()).serialize())
+    monkeypatch.setenv("TVVERIFY_TASKS", "hello-world::run7, fix-git")
+    assert [(t.task_id, t.root_image_id) for t in adapter.tasks()] == [("hello-world::run7", "hello-world"), ("fix-git", "fix-git")]
+

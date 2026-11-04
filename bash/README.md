@@ -89,3 +89,12 @@ uv run python -m tvverify check --adapter tvcache_workloads.bash.verify:HelloWor
 cache server and replays every cached node from a fresh container. It starts many containers,
 so expect it to take minutes. `OLDPWD` is reported but not compared: restoring a snapshot
 replays `cd`, which overwrites it.
+
+## RL training (veRL) and Perlmutter
+
+`src/tvcache_workloads/bash/verl/` trains on Terminal-Bench with veRL's
+ToolAgentLoop, sending every `bash` call through TVCache (one executor per
+trajectory) and rewarding -1 / 0 / 1 for no tool call / tests failed / tests
+passed. `bash/scripts/perlmutter/` runs it on NERSC Perlmutter (podman-hpc
+instead of Docker) and checks the cache it built with `tvverify check-graph`;
+see its README.

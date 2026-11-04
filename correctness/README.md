@@ -99,6 +99,19 @@ subclass, the workload as a `WorkloadAdapter` that points at it.
      same call disagree with each other, otherwise it is a **BUG**. Only bugs and
      contract failures give a non-zero exit code.
 
+4. Check a trie someone else built, e.g. a training run's DUMP_ALL saved to a file:
+
+   ```bash
+   .venv/bin/python -m tvverify check-graph --adapter my_workload:MyAdapter --dump dump.json --json result.json
+   .venv/bin/python -m tvverify report results/*.json > report.md
+   ```
+
+   Per task it replays `--max-replay-nodes` nodes (default 20): the most-served
+   half (cache hits plus resumes from their snapshot) and a seeded random sample
+   of the rest. Pass `--no-snapshots` when the dump's snapshots are gone; the
+   snapshot check (C2a) is then skipped. A replay that cannot run (`Failed to
+   execute`, or an exception) is **inconclusive**: reported, but no exit code.
+
 `equals(other)` compares two live sandboxes (diff two filesystems, compare two
 database dumps). `state_digest()` returns hashed components instead; it is
 faster and says *what* differed, and the default `equals` is built on it. If
