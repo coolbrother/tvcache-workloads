@@ -20,7 +20,8 @@ the fix.
 | 12 | Contract check failed: "a restored snapshot equals the source at fork time" (restored cwd `/app` instead of `/app/work`) | `stage.sh` excluded `tmux-res`, which is the tmux-resurrect plugin (tracked source), so cwd/exported variables were never saved or replayed. The manager logs the copy error but `/start` still succeeds | Stop excluding `tmux-res` | `stage.sh` |
 | 13 | First sampling job (60728653) failed after 10 min: "container manager did not open port 9901"; manager log: `Could not acquire lock for ~/.cache/uv ... os error 524` | `$HOME` on compute nodes does not support `flock` (scratch and `/tmp` do). uv and cargo both lock their caches. Login nodes are fine, so only a batch job shows it | `UV_CACHE_DIR` and `CARGO_HOME` on scratch, rebuilt once on the login node to fill them. Checked on a compute node with `probe_locks.sh` | `env.sh` |
 | 14 | Second sampling job (60729400) failed after 2 min in veRL's dataset load: `fcntl.flock ... OSError: [Errno 524]` | Same as 13: HF `datasets` locks its cache under `~/.cache/huggingface` | Every cache on scratch: `XDG_CACHE_HOME`, `HF_HOME`, `VLLM_CACHE_ROOT`, `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`, `MPLCONFIGDIR`, `CUDA_CACHE_PATH` | `env.sh` |
-| 15 | Third sampling job (60729933) failed after 3 min while building the actor model: `FlashAttention2 has been toggled on, but ... the package for FlashAttention2 doesn't seem to be installed` | veRL turns on `flash_attention_2` by default; `flash-attn` is not in `verl-env` (no wheel for torch 2.11 + CUDA 13; building it takes a long time) | **Not fixed yet.** Plan: `+actor_rollout_ref.model.override_config.attn_implementation=sdpa` in `train_pilot.sh` (PyTorch's built-in attention; fine for a 1.5B model), or install `flash-attn` | `train_pilot.sh` (open) |
+| 15 | Third sampling job (60729933) failed after 3 min while building the actor model: `FlashAttention2 has been toggled on, but ... the package for FlashAttention2 doesn't seem to be installed` | veRL turns on `flash_attention_2` by default; `flash-attn` is not in `verl-env` (no wheel for torch 2.11 + CUDA 13; building it takes a long time) | `attn_implementation=sdpa` and `use_remove_padding=False` (packing needs flash-attn's varlen kernels). Worked in job 60777643 | `train_pilot.sh` |
+| 16 | Fourth sampling job (60777643) ran 49 min, then Slurm `OUT_OF_MEMORY` (MaxRSS 57 GB, 5 oom_kill events); veRL's TaskRunner died before printing validation metrics | Most likely container images: on GPU nodes podman's storage is `/tmp`, a RAM disk that counts toward the job's memory. The quarter node (`-c 32`) has about 60 GB, shared with vLLM and Ray; base images add up (png-generation alone is 9.9 GB) | **Open.** Options: half a node (`-G 2 -c 64`, about 120 GB, twice the cost), leave out the largest images, or both | `train_pilot.sh` / sbatch line (open) |
 
 ## Still worth knowing
 
@@ -42,3 +43,16 @@ the fix.
 Smoke test on login03 (2026-11-03), `fixes` variant: contract 11/11 (1 skip),
 cache PASS, replay PASS (13/13 nodes, 0 noise), no leftover containers or
 snapshot images. Same verdicts as the Mac run.
+
+## Sampling test 60777643 (2026-11-03, fixes variant, 4 rollouts × 49 tasks)
+
+Got through the rollouts and tvverify, then hit #16. Manager calls: 297
+`/start`, 686 `/execute`, 91 `/test`, 4 `/snapshot`; 11 malformed tool calls
+in the veRL log. Rollouts took about 43 min. tvverify: 118/118 nodes
+replayed, 0 cache vs no-cache mismatches, 1 noise, 3 "bugs", which are 2
+distinct findings:
+- `vimscript-vim-quine`, C1 on `ls -l /tmp` (the same node in both dumps):
+  likely timestamps in the listing, so nondeterminism, not a cache bug. To check.
+- `build-stp`, C2a after `wget https://example.com/...` and
+  `apt-get install wget`: network- and apt-dependent commands, likely
+  nondeterminism. To check.
