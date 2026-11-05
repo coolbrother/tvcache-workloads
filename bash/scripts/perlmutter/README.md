@@ -6,6 +6,9 @@ command going through TVCache, then `tvverify check-graph` on the cache it
 built. Pilot settings: Qwen2.5-1.5B-Instruct, 4 rollouts per task, batch
 4, 5 epochs (the paper: Qwen3-4B, 8 rollouts, 10 epochs).
 
+Step-by-step instructions with every command, configuration and an FAQ are
+in `GUIDE.md`.
+
 Perlmutter has no Docker daemon, so the container manager drives
 **podman-hpc** (`CONTAINER_CLI`, `COMPOSE_CMD`, `DOCKER_HOST`; see `env.sh`).
 
@@ -13,7 +16,7 @@ Perlmutter has no Docker daemon, so the container manager drives
 
 | Step | Where | Command |
 |---|---|---|
-| 0. Log in | Mac | `sshproxy.sh -u <user>` |
+| 0. Log in | Mac | `sshproxy -u <user>` (in a real terminal) |
 | 1. Stage the code | Mac | `REMOTE=<user>@perlmutter.nersc.gov bash stage.sh` |
 | 2. Probe podman (**gate**) | login node first (free), then a short shared CPU job | `bash probe_podman.sh`; if it passes, confirm under `salloc -q shared_interactive -C cpu -c 16 -t 00:20:00 -A <project>` |
 | 3. Build servers, install Python side | login node | `bash setup.sh` |

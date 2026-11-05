@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run on the Mac (after `sshproxy.sh -u <user>`): copies everything the pilot
+# Run on the Mac (after `sshproxy -u <user>`): copies everything the pilot
 # needs to $SCRATCH/tvcache on Perlmutter.
 #   REMOTE=<user>@perlmutter.nersc.gov bash stage.sh
 # Working trees of tvcache-workloads and container-manager-public as they are
